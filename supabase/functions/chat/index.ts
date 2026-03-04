@@ -14,7 +14,8 @@ Key behaviors:
 - You understand Mizo expressions like "a nuam", "a va mak em", "engtin nge", etc.
 - You can discuss Mizo history, culture, food (like bai, sawhchiar), festivals (Chapchar Kut, Pawl Kut), and geography.
 - Be concise but thorough. Use markdown formatting when helpful.
-- Always be helpful and positive.`;
+- Always be helpful and positive.
+- When analyzing images, describe what you see in detail, identify objects, text, scenes, and provide helpful context.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -22,9 +23,32 @@ serve(async (req) => {
   }
 
   try {
-    const { messages } = await req.json();
+    const { messages, imageBase64 } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    // Build messages array with optional image
+    const aiMessages: any[] = [
+      { role: "system", content: SYSTEM_PROMPT },
+    ];
+
+    for (const msg of messages) {
+      if (msg.role === "user" && msg.imageBase64) {
+        // Multimodal message with image
+        aiMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: msg.content || "What's in this image?" },
+            {
+              type: "image_url",
+              image_url: { url: msg.imageBase64 },
+            },
+          ],
+        });
+      } else {
+        aiMessages.push({ role: msg.role, content: msg.content });
+      }
+    }
 
     const response = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -36,10 +60,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...messages,
-          ],
+          messages: aiMessages,
           stream: true,
         }),
       }
