@@ -5,7 +5,7 @@ import { useTheme } from "@/hooks/useTheme";
 import ChatSidebar from "@/components/chat/ChatSidebar";
 import ChatMessages from "@/components/chat/ChatMessages";
 import ChatInput from "@/components/chat/ChatInput";
-import { Bot, Menu, Moon, Sun, LogOut } from "lucide-react";
+import { Bot, Menu, Moon, Sun, LogOut, UserCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -92,12 +92,12 @@ const ChatPage = () => {
     return data.id;
   };
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || isStreaming) return;
+  const sendMessage = async (content: string, imageBase64?: string) => {
+    if ((!content.trim() && !imageBase64) || isStreaming) return;
 
     let chatId = activeChatId;
     if (!chatId) {
-      chatId = await createChat(content);
+      chatId = await createChat(content || "Image analysis");
       if (!chatId) return;
     }
 
@@ -117,10 +117,14 @@ const ChatPage = () => {
     const assistantId = crypto.randomUUID();
 
     try {
-      const allMessages = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      const allMessages = [...messages, userMsg].map((m, i) => {
+        const msgData: any = { role: m.role, content: m.content };
+        // Attach image to the last user message only
+        if (i === messages.length && imageBase64) {
+          msgData.imageBase64 = imageBase64;
+        }
+        return msgData;
+      });
 
       const resp = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`,
@@ -280,6 +284,12 @@ const ChatPage = () => {
             <span className="font-display font-semibold text-sm">MizoSmart AI</span>
           </div>
           <div className="flex-1" />
+          <button
+            onClick={() => navigate("/profile")}
+            className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
+          >
+            <UserCircle className="h-4 w-4" />
+          </button>
           <button
             onClick={toggleTheme}
             className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"

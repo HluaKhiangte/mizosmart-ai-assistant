@@ -1,39 +1,100 @@
-import { useState } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef } from "react";
+import { Send, ImagePlus, X } from "lucide-react";
 
 interface Props {
-  onSend: (message: string) => void;
+  onSend: (message: string, imageBase64?: string) => void;
   disabled?: boolean;
 }
 
 const ChatInput = ({ onSend, disabled }: Props) => {
   const [input, setInput] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || disabled) return;
-    onSend(input.trim());
+    if ((!input.trim() && !imageBase64) || disabled) return;
+    onSend(input.trim() || "What's in this image?", imageBase64 || undefined);
     setInput("");
+    setImagePreview(null);
+    setImageBase64(null);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 10 * 1024 * 1024) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setImagePreview(result);
+      // Extract base64 data (remove data:image/...;base64, prefix)
+      setImageBase64(result);
+    };
+    reader.readAsDataURL(file);
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    setImageBase64(null);
   };
 
   return (
     <div className="border-t border-border p-3 bg-background">
-      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message..."
-          className="flex-1 h-11 px-4 rounded-xl bg-secondary text-foreground text-sm placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
-          disabled={disabled}
-        />
-        <button
-          type="submit"
-          disabled={disabled || !input.trim()}
-          className="h-11 w-11 rounded-xl gradient-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 transition-opacity active:scale-95"
-        >
-          <Send className="h-4 w-4" />
-        </button>
-      </form>
+      <div className="max-w-2xl mx-auto">
+        {/* Image preview */}
+        {imagePreview && (
+          <div className="mb-2 relative inline-block">
+            <img
+              src={imagePreview}
+              alt="Upload preview"
+              className="h-20 w-20 rounded-lg object-cover border border-border"
+            />
+            <button
+              onClick={removeImage}
+              className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="h-11 w-11 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
+            disabled={disabled}
+          >
+            <ImagePlus className="h-4 w-4" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={imagePreview ? "Ask about this image..." : "Type a message..."}
+            className="flex-1 h-11 px-4 rounded-xl bg-secondary text-foreground text-sm placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+            disabled={disabled}
+          />
+          <button
+            type="submit"
+            disabled={disabled || (!input.trim() && !imageBase64)}
+            className="h-11 w-11 rounded-xl gradient-primary flex items-center justify-center text-primary-foreground disabled:opacity-50 transition-opacity active:scale-95"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
