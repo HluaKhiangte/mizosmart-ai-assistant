@@ -19,6 +19,7 @@ export interface Chat {
   id: string;
   title: string;
   created_at: string;
+  pinned: boolean;
 }
 
 const ChatPage = () => {
@@ -268,6 +269,13 @@ const ChatPage = () => {
     );
   };
 
+  const pinChat = async (chatId: string, pinned: boolean) => {
+    await supabase.from("chats").update({ pinned }).eq("id", chatId);
+    setChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, pinned } : c))
+    );
+  };
+
   const newChat = () => {
     setActiveChatId(null);
     setMessages([]);
@@ -306,6 +314,7 @@ const ChatPage = () => {
           onNewChat={newChat}
           onDeleteChat={deleteChat}
           onRenameChat={renameChat}
+          onPinChat={pinChat}
         />
       </div>
 
