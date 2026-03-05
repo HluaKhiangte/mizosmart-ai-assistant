@@ -1,0 +1,1 @@
+CREATE POLICY "Users can update messages of own chats" ON public.messages FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM chats WHERE chats.id = messages.chat_id AND chats.user_id = auth.uid()));

@@ -5,7 +5,7 @@ import { useTheme } from "@/hooks/useTheme";
 import ChatSidebar from "@/components/chat/ChatSidebar";
 import ChatMessages from "@/components/chat/ChatMessages";
 import ChatInput from "@/components/chat/ChatInput";
-import { Bot, Menu, Moon, Sun, LogOut, UserCircle } from "lucide-react";
+import { Bot, Menu, Moon, Sun, LogOut, UserCircle, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -36,13 +36,11 @@ const ChatPage = () => {
     if (!loading && !user) navigate("/auth");
   }, [user, loading, navigate]);
 
-  // Load chats
   useEffect(() => {
     if (!user) return;
     loadChats();
   }, [user]);
 
-  // Load messages when active chat changes
   useEffect(() => {
     if (!activeChatId) {
       setMessages([]);
@@ -51,7 +49,6 @@ const ChatPage = () => {
     loadMessages(activeChatId);
   }, [activeChatId]);
 
-  // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -104,14 +101,8 @@ const ChatPage = () => {
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", content };
     setMessages((prev) => [...prev, userMsg]);
 
-    // Save user message
-    await supabase.from("messages").insert({
-      chat_id: chatId,
-      role: "user",
-      content,
-    });
+    await supabase.from("messages").insert({ chat_id: chatId, role: "user", content });
 
-    // Stream AI response
     setIsStreaming(true);
     let assistantContent = "";
     const assistantId = crypto.randomUUID();
@@ -119,7 +110,6 @@ const ChatPage = () => {
     try {
       const allMessages = [...messages, userMsg].map((m, i) => {
         const msgData: any = { role: m.role, content: m.content };
-        // Attach image to the last user message only
         if (i === messages.length && imageBase64) {
           msgData.imageBase64 = imageBase64;
         }
@@ -139,13 +129,9 @@ const ChatPage = () => {
       );
 
       if (!resp.ok || !resp.body) {
-        if (resp.status === 429) {
-          toast.error("Rate limited. Please try again in a moment.");
-        } else if (resp.status === 402) {
-          toast.error("AI credits exhausted. Please add more credits.");
-        } else {
-          toast.error("Failed to get AI response");
-        }
+        if (resp.status === 429) toast.error("Rate limited. Please try again in a moment.");
+        else if (resp.status === 402) toast.error("AI credits exhausted.");
+        else toast.error("Failed to get AI response");
         setIsStreaming(false);
         return;
       }
@@ -191,7 +177,6 @@ const ChatPage = () => {
         }
       }
 
-      // Save assistant message
       if (assistantContent) {
         await supabase.from("messages").insert({
           chat_id: chatId,
@@ -202,6 +187,65 @@ const ChatPage = () => {
     } catch (err) {
       console.error(err);
       toast.error("Something went wrong");
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const editMessage = async (msgId: string, newContent: string) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, content: newContent } : m))
+    );
+    // Update in DB
+    await supabase.from("messages").update({ content: newContent }).eq("id", msgId);
+  };
+
+  const handleCartoonify = async (imageBase64: string) => {
+    if (isStreaming) return;
+    setIsStreaming(true);
+
+    let chatId = activeChatId;
+    if (!chatId) {
+      chatId = await createChat("Cartoonify image");
+      if (!chatId) { setIsStreaming(false); return; }
+    }
+
+    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: "🎨 Convert this image to cartoon style" };
+    setMessages((prev) => [...prev, userMsg]);
+    await supabase.from("messages").insert({ chat_id: chatId, role: "user", content: userMsg.content });
+
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cartoonify`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ imageBase64 }),
+        }
+      );
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        toast.error(err.error || "Failed to cartoonify");
+        setIsStreaming(false);
+        return;
+      }
+
+      const data = await resp.json();
+      let assistantContent = data.text || "Here's your cartoon version!";
+      if (data.imageUrl) {
+        assistantContent += `\n\n![Cartoon](${data.imageUrl})`;
+      }
+
+      const assistantMsg: Message = { id: crypto.randomUUID(), role: "assistant", content: assistantContent };
+      setMessages((prev) => [...prev, assistantMsg]);
+      await supabase.from("messages").insert({ chat_id: chatId, role: "assistant", content: assistantContent });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to cartoonify image");
     } finally {
       setIsStreaming(false);
     }
@@ -240,7 +284,6 @@ const ChatPage = () => {
 
   return (
     <div className="h-[100dvh] flex bg-background">
-      {/* Sidebar overlay for mobile */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-foreground/20 z-40 md:hidden"
@@ -248,7 +291,6 @@ const ChatPage = () => {
         />
       )}
 
-      {/* Sidebar */}
       <div
         className={`fixed md:relative z-50 h-full transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
@@ -267,9 +309,7 @@ const ChatPage = () => {
         />
       </div>
 
-      {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <header className="glass-strong h-14 flex items-center px-4 gap-3 shrink-0 border-b border-border">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -291,6 +331,12 @@ const ChatPage = () => {
             <UserCircle className="h-4 w-4" />
           </button>
           <button
+            onClick={() => navigate("/settings")}
+            className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+          <button
             onClick={toggleTheme}
             className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
           >
@@ -304,14 +350,17 @@ const ChatPage = () => {
           </button>
         </header>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto chat-scrollbar">
-          <ChatMessages messages={messages} isStreaming={isStreaming} />
+          <ChatMessages
+            messages={messages}
+            isStreaming={isStreaming}
+            onEditMessage={editMessage}
+            onCartoonify={handleCartoonify}
+          />
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
-        <ChatInput onSend={sendMessage} disabled={isStreaming} />
+        <ChatInput onSend={sendMessage} onCartoonify={handleCartoonify} disabled={isStreaming} />
       </div>
     </div>
   );
