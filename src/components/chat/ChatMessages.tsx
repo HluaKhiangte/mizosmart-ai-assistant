@@ -61,6 +61,28 @@ const ChatMessages = ({ messages, isStreaming, onEditMessage, onCartoonify }: Pr
     return match ? match[1] : null;
   };
 
+  // Render user content with inline images
+  const renderUserContent = (content: string) => {
+    const imgRegex = /!\[([^\]]*)\]\((data:image\/[^)]+)\)/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = imgRegex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index));
+      }
+      parts.push(
+        <img key={match.index} src={match[2]} alt={match[1] || "image"} className="rounded-xl max-w-full max-h-72 object-contain my-2" loading="lazy" />
+      );
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex));
+    }
+    return parts.length > 0 ? <>{parts}</> : content;
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
       {messages.map((msg) => {
@@ -112,11 +134,17 @@ const ChatMessages = ({ messages, isStreaming, onEditMessage, onCartoonify }: Pr
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>p:last-child]:mb-0">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>p:last-child]:mb-0 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-2">
+                      <ReactMarkdown
+                        components={{
+                          img: ({ src, alt }) => (
+                            <img src={src} alt={alt || "image"} className="rounded-xl max-w-full max-h-72 object-contain" loading="lazy" />
+                          ),
+                        }}
+                      >{msg.content}</ReactMarkdown>
                     </div>
                   ) : (
-                    msg.content
+                    renderUserContent(msg.content)
                   )}
                 </div>
               )}
