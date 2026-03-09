@@ -13,8 +13,8 @@ serve(async (req) => {
 
   try {
     const { imageBase64 } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
 
     if (!imageBase64) {
       return new Response(
@@ -23,63 +23,61 @@ serve(async (req) => {
       );
     }
 
+    // Extract mime type and base64 data
+    const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      return new Response(
+        JSON.stringify({ error: "Invalid image format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-image",
-          messages: [
+          contents: [
             {
               role: "user",
-              content: [
+              parts: [
                 {
-                  type: "text",
-                  text: "Transform this image into a fun, colorful cartoon style. Keep all the main subjects and composition but make it look like a vibrant cartoon illustration with bold outlines and bright colors.",
+                  text: "Transform this image into a fun, colorful cartoon style. Keep all the main subjects and composition but make it look like a vibrant cartoon illustration with bold outlines and bright colors. Describe the cartoon version you would create in detail.",
                 },
                 {
-                  type: "image_url",
-                  image_url: { url: imageBase64 },
+                  inline_data: {
+                    mime_type: match[1],
+                    data: match[2],
+                  },
                 },
               ],
             },
           ],
-          modalities: ["image", "text"],
         }),
       }
     );
 
     if (!response.ok) {
+      const t = await response.text();
+      console.error("Gemini API error:", response.status, t);
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limited. Please try again later." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "AI credits exhausted." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
       return new Response(
-        JSON.stringify({ error: "Failed to generate cartoon" }),
+        JSON.stringify({ error: "Failed to process image" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    const text = data.choices?.[0]?.message?.content || "";
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate cartoon description.";
 
     return new Response(
-      JSON.stringify({ imageUrl, text }),
+      JSON.stringify({ text, imageUrl: null }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
