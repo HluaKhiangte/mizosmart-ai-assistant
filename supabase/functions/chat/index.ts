@@ -58,24 +58,34 @@ serve(async (req) => {
 
     const contents = convertToGeminiMessages(messages);
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents,
-        }),
-      }
-    );
+    // Retry with exponential backoff for rate limits
+    let response: Response | null = null;
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents,
+          }),
+        }
+      );
 
-    if (!response.ok) {
-      const t = await response.text();
-      console.error("Gemini API error:", response.status, t);
-      if (response.status === 429) {
+      if (response.status !== 429 || attempt === maxRetries) break;
+      const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+      console.log(`Rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+
+    if (!response || !response.ok) {
+      const t = response ? await response.text() : "No response";
+      console.error("Gemini API error:", response?.status, t);
+      if (response?.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limited. Please try again later." }),
+          JSON.stringify({ error: "Gemini API rate limited. Please enable billing at https://aistudio.google.com/ or wait and try again." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
